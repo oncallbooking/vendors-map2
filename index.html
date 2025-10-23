@@ -2,129 +2,1068 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Vendor Dashboard — Plotly + Leaflet</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Web Analytics Studio — Client-side</title>
 
-  <!-- CSS -->
+  <!-- Bootstrap 5 -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
-  <link href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
-
-  <!-- Plotly -->
-  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <!-- Font Awesome -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Leaflet MarkerCluster -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <!-- Tiny custom styles -->
+  <style>
+    :root{
+      --bg: #f6f7fb;
+      --card: #ffffff;
+      --muted: #6c757d;
+    }
+    [data-theme="dark"]{
+      --bg:#0f1720; --card:#111827; --muted:#9ca3af; color-scheme: dark;
+    }
+    body{ background:var(--bg); color:var(--muted); font-family: Inter, system-ui, sans-serif; }
+    .card{ background:var(--card); color:inherit; border-radius:12px; box-shadow:0 6px 18px rgba(12,17,43,0.06); }
+    .dashboard-grid{
+      display:grid; grid-template-columns: repeat(auto-fill,minmax(320px,1fr)); gap:16px;
+      margin-bottom:16px;
+    }
+    .chart-card{ min-height:260px; display:flex; flex-direction:column; }
+    .chart-canvas{ flex:1; min-height:220px; }
+    #sidebar{ max-width:320px; min-width:240px; height:calc(100vh - 72px); overflow:auto; padding:12px; }
+    #main{ padding:12px; }
+    .sticky-table{ position:sticky; top:0; z-index:2; background:var(--card); }
+    .table-responsive{ max-height:380px; overflow:auto; }
+    .file-drop{
+      border:2px dashed rgba(0,0,0,0.06); padding:24px; text-align:center; border-radius:10px; background:linear-gradient(180deg, rgba(255,255,255,0.6), transparent);
+    }
+    .tag { display:inline-block; padding:2px 8px; border-radius:10px; background:rgba(0,0,0,0.06); margin:3px; font-size:12px; color:var(--muted); }
+    .controls-row .form-select, .controls-row .form-control { min-width:120px; }
+    .small-muted{ color:var(--muted); font-size:13px; }
+    .navbar-brand { font-weight:700; letter-spacing:0.2px; }
+    /* mobile */
+    @media (max-width:991px){ #sidebar{ position:relative; height:auto; } }
+  </style>
 </head>
 <body>
-  <div class="app">
-    <aside class="sidebar p-3">
-      <div class="brand d-flex align-items-center mb-3">
-        <div class="logo me-2"><i class="fas fa-chart-pie"></i></div>
-        <div><h5 class="m-0">Vendor Insights</h5><small class="text-muted">Upload · Filter · Visualize</small></div>
-      </div>
+  <!-- Top navbar -->
+  <nav class="navbar navbar-expand-lg navbar-light bg-transparent px-3 py-2">
+    <div class="container-fluid">
+      <a class="navbar-brand d-flex align-items-center gap-2" href="#" aria-label="Web Analytics Studio">
+        <i class="fa-solid fa-chart-simple fa-lg"></i>
+        <span>Web Analytics Studio</span>
+      </a>
 
-      <div class="mb-3">
-        <label class="form-label">Upload Excel / CSV</label>
-        <input id="fileInput" type="file" accept=".xlsx,.xls,.csv" class="form-control form-control-sm">
-        <div class="mt-2 d-grid">
-          <button id="loadDemo" class="btn btn-sm btn-outline-light">Load Demo</button>
+      <div class="d-flex align-items-center gap-2">
+        <button id="themeToggle" class="btn btn-outline-secondary btn-sm" aria-pressed="false" title="Toggle theme">
+          <i class="fa-solid fa-moon"></i>
+        </button>
+        <button id="printBtn" class="btn btn-outline-primary btn-sm" title="Print dashboard"><i class="fa-solid fa-print"></i></button>
+        <div class="vr mx-2"></div>
+        <label class="mb-0 small-muted me-2">Global Search</label>
+        <input id="globalSearch" class="form-control form-control-sm" style="min-width:220px" placeholder="Search across dataset..." aria-label="Global search">
+      </div>
+    </div>
+  </nav>
+
+  <div class="container-fluid">
+    <div class="row g-3">
+      <!-- Sidebar -->
+      <aside id="sidebar" class="col-lg-3">
+        <div class="card p-3 mb-3" role="region" aria-label="Data upload and schema">
+          <h6 class="mb-2">1) Upload Data <span class="small text-muted">(xlsx, xls, csv)</span></h6>
+
+          <div id="fileDrop" class="file-drop mb-2" tabindex="0" role="button" aria-label="Drop a file here or click to upload">
+            <p class="mb-1"><i class="fa-solid fa-file-arrow-up fa-2x"></i></p>
+            <p class="mb-1 small-muted">Drag & drop or click to select</p>
+            <small class="text-muted d-block">Max client memory depends on browser — large files may fail.</small>
+            <input id="fileInput" type="file" accept=".csv,.xlsx,.xls" style="display:none" aria-hidden="true"/>
+          </div>
+
+          <div id="uploadFeedback" class="small-muted mb-2">No dataset loaded.</div>
+
+          <div class="mb-2">
+            <button id="clearData" class="btn btn-sm btn-outline-danger w-100" title="Clear loaded data">Clear Dataset</button>
+          </div>
+
+          <hr>
+
+          <h6 class="mb-1">Dataset Schema</h6>
+          <div id="schemaList" class="small-muted" style="max-height:200px; overflow:auto"></div>
         </div>
-      </div>
 
-      <div class="filters p-2">
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <strong>Filters</strong>
-          <button id="resetFilters" class="btn btn-sm btn-link">Reset</button>
-        </div>
-        <div id="filtersContainer" class="filters-container"></div>
-      </div>
+        <div class="card p-3 mb-3" role="region" aria-label="Filters">
+          <div class="d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">Filters</h6>
+            <div>
+              <button id="resetFilters" class="btn btn-sm btn-outline-secondary me-1" title="Reset filters">Reset</button>
+              <button id="clearFilters" class="btn btn-sm btn-outline-danger" title="Clear dashboard filters">Clear</button>
+            </div>
+          </div>
 
-      <div class="mt-3">
-        <div class="small text-muted">Rows: <span id="rowCount">0</span></div>
-        <div class="small text-muted">Cols: <span id="colCount">0</span></div>
-      </div>
-
-      <div class="mt-3 d-grid">
-        <button id="exportCsv" class="btn btn-sm btn-outline-light" disabled><i class="fas fa-file-csv me-1"></i>Export CSV</button>
-        <button id="exportXlsx" class="btn btn-sm btn-outline-light" disabled><i class="fas fa-file-excel me-1"></i>Export XLSX</button>
-        <button id="themeToggle" class="btn btn-sm btn-light mt-2"><i class="fas fa-moon me-1"></i>Theme</button>
-      </div>
-    </aside>
-
-    <main class="main-content p-3">
-      <header class="d-flex justify-content-between align-items-center mb-3">
-        <div>
-          <h4 class="mb-0">Excel Visualizer</h4>
-          <small class="text-muted">Plotly charts · Leaflet map · Full table</small>
-        </div>
-
-        <div class="d-flex gap-2 align-items-center">
-          <input id="globalSearch" placeholder="Search..." class="form-control form-control-sm">
-          <select id="chartType" class="form-select form-select-sm">
-            <option value="bar">Bar</option>
-            <option value="hbar">Horizontal Bar</option>
-            <option value="line">Line</option>
-            <option value="area">Area</option>
-            <option value="pie">Pie</option>
-            <option value="donut">Doughnut</option>
-            <option value="polar">Polar Area</option>
-            <option value="radar">Radar</option>
-            <option value="bubble">Bubble</option>
-            <option value="scatter">Scatter</option>
-          </select>
-          <input id="topN" type="number" min="1" value="10" class="form-control form-control-sm" style="width:90px">
-          <button id="applyBtn" class="btn btn-sm btn-primary">Apply</button>
-          <button id="chartFs" class="btn btn-sm btn-outline-secondary" title="Chart Fullscreen"><i class="fas fa-expand"></i></button>
-          <button id="mapFs" class="btn btn-sm btn-outline-secondary" title="Map Fullscreen"><i class="fas fa-expand"></i></button>
-          <button id="downloadChart" class="btn btn-sm btn-primary" disabled><i class="fas fa-download"></i></button>
-          <button id="printBtn" class="btn btn-sm btn-outline-secondary"><i class="fas fa-print"></i></button>
-        </div>
-      </header>
-
-      <section class="row gap-3">
-        <div class="col-12 col-lg-8">
-          <div id="chartCard" class="card p-2">
-            <div id="chart" style="height:520px;"></div>
+          <div id="filtersContainer" class="mt-2 small-muted">
+            <p class="mb-0 text-muted">Load a dataset to see filters.</p>
           </div>
         </div>
 
-        <div class="col-12 col-lg-4">
-          <div id="mapCard" class="card p-2">
-            <div id="map" style="height:520px;"></div>
+        <div class="card p-3 mb-3" role="region" aria-label="Map controls">
+          <h6 class="mb-1">Map</h6>
+          <div class="small-muted mb-2">Plot vendor locations using lat/lng or auto-geocode city/state.</div>
+          <div class="d-grid gap-2">
+            <button id="openMap" class="btn btn-sm btn-primary">Open Map Panel</button>
+            <button id="geocodeAll" class="btn btn-sm btn-outline-secondary">Auto-Geocode (Nominatim)</button>
           </div>
-        </div>
-      </section>
-
-      <section class="table-section mt-3 card p-3">
-        <div class="d-flex justify-content-between mb-2">
-          <h6 class="mb-0">Full Data Table</h6>
-          <div class="d-flex gap-2">
-            <input id="tableSearch" placeholder="Search rows..." class="form-control form-control-sm" style="min-width:200px">
-            <select id="rowsPerPage" class="form-select form-select-sm" style="width:90px">
-              <option value="10">10</option>
-              <option value="25" selected>25</option>
-              <option value="50">50</option>
-            </select>
-          </div>
+          <small class="text-muted d-block mt-2">Geocoding uses OpenStreetMap Nominatim (rate-limited). Use sparingly.</small>
         </div>
 
-        <div class="table-responsive" id="tableWrapper" style="max-height:360px; overflow:auto;">
-          <table class="table table-hover mb-0" id="dataTable">
-            <thead id="tableHead"></thead>
-            <tbody id="tableBody"></tbody>
-          </table>
+        <div class="card p-3" role="region" aria-label="Settings">
+          <h6 class="mb-1">Settings</h6>
+          <div class="form-check form-switch mt-2">
+            <input class="form-check-input" type="checkbox" id="toggleTooltips" checked>
+            <label class="form-check-label small-muted" for="toggleTooltips">Show tooltips on charts</label>
+          </div>
+          <div class="form-check form-switch mt-2">
+            <input class="form-check-input" type="checkbox" id="toggleClustering" checked>
+            <label class="form-check-label small-muted" for="toggleClustering">Enable map clustering</label>
+          </div>
         </div>
-      </section>
-    </main>
+      </aside>
+
+      <!-- Main content -->
+      <main id="main" class="col-lg-9">
+        <!-- Controls to create charts -->
+        <div class="card p-3 mb-3">
+          <div class="d-flex flex-wrap gap-2 align-items-center controls-row" role="region" aria-label="Chart controls">
+            <div class="me-1">
+              <label class="form-label mb-0 small-muted">Chart Type</label>
+              <select id="chartType" class="form-select form-select-sm" aria-label="Select chart type">
+                <option value="bar">Bar</option>
+                <option value="hbar">Horizontal Bar</option>
+                <option value="stacked_bar">Stacked Bar</option>
+                <option value="line">Line</option>
+                <option value="area">Area</option>
+                <option value="pie">Pie</option>
+                <option value="doughnut">Doughnut</option>
+                <option value="scatter">Scatter</option>
+                <option value="bubble">Bubble</option>
+                <option value="radar">Radar</option>
+                <option value="polar">Polar</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="form-label mb-0 small-muted">X Field</label>
+              <select id="xField" class="form-select form-select-sm" aria-label="X field"></select>
+            </div>
+
+            <div>
+              <label class="form-label mb-0 small-muted">Y Field</label>
+              <select id="yField" class="form-select form-select-sm" aria-label="Y field"></select>
+            </div>
+
+            <div>
+              <label class="form-label mb-0 small-muted">Aggregation</label>
+              <select id="agg" class="form-select form-select-sm" aria-label="Aggregation">
+                <option value="count">Count</option>
+                <option value="sum">Sum</option>
+                <option value="avg">Average</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="form-label mb-0 small-muted">Top N</label>
+              <input id="topN" type="number" min="0" value="0" class="form-control form-control-sm" aria-label="Top N">
+            </div>
+
+            <div class="d-flex gap-2 align-items-end ms-auto">
+              <button id="addChart" class="btn btn-success btn-sm" title="Add chart to dashboard"><i class="fa-solid fa-plus"></i> Add Chart</button>
+              <button id="exportAllCSV" class="btn btn-outline-primary btn-sm" title="Export all filtered data"><i class="fa-solid fa-file-csv"></i> Export Data</button>
+              <button id="clearDashboard" class="btn btn-outline-danger btn-sm" title="Clear dashboard"><i class="fa-solid fa-trash"></i> Clear</button>
+            </div>
+          </div>
+          <div class="mt-2 small-muted">Supported chart types: bar, horizontal bar, stacked bar, line, area, pie, doughnut, radar, polar, bubble, scatter. Charts are interactive and responsive.</div>
+        </div>
+
+        <!-- Dashboard grid -->
+        <div id="dashboard" class="dashboard-grid mb-3" aria-live="polite" aria-label="Dashboard charts">
+          <div class="small-muted">No charts yet. Add charts from controls above.</div>
+        </div>
+
+        <!-- Data table -->
+        <div class="card p-3">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0">Data Table</h6>
+            <div>
+              <button id="exportTableCSV" class="btn btn-sm btn-outline-primary me-1" title="Export table CSV"><i class="fa-solid fa-file-csv"></i></button>
+              <button id="exportTableXLSX" class="btn btn-sm btn-outline-secondary" title="Export table XLSX"><i class="fa-solid fa-file-excel"></i></button>
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table id="dataTable" class="table table-sm table-hover" aria-label="Data table">
+              <thead class="sticky-table">
+                <tr id="tableHead"></tr>
+              </thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center mt-2">
+            <div class="small-muted" id="tableInfo">No data</div>
+            <div class="btn-group">
+              <button id="prevPage" class="btn btn-sm btn-outline-secondary">Prev</button>
+              <button id="nextPage" class="btn btn-sm btn-outline-secondary">Next</button>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
   </div>
 
-  <!-- libs -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <!-- Map modal -->
+  <div class="modal fade" id="mapModal" tabindex="-1" aria-labelledby="mapModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-fullscreen-sm-down">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Vendor Map</h5>
+          <button type="button" class="btn btn-outline-secondary btn-sm me-2" id="fitMarkers"><i class="fa-solid fa-expand-arrows-alt"></i> Fit</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="toggleFullMap"><i class="fa-solid fa-square-up-right"></i> Fullscreen</button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-0">
+          <div id="map" style="height:72vh;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 
-  <!-- app script -->
-  <script src="script.js"></script>
+  <!-- Dependencies: Plotly, SheetJS, Leaflet, MarkerCluster, FileSaver -->
+  <script src="https://cdn.plot.ly/plotly-2.29.1.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+/*
+  Web Analytics Studio — Client-side single-page app
+  - All state lives in memory and localStorage (theme)
+  - Uses SheetJS to parse files client-side
+  - Plotly for charts
+  - Leaflet for mapping (Nominatim geocoding optional)
+  - Basic table with pagination/sorting
+*/
+
+(() => {
+  // ---------- App State ----------
+  const state = {
+    rawData: [],         // array of objects (rows)
+    columns: [],         // array of {name,type}
+    filteredData: [],    // after filters/search applied
+    filters: {},         // per-column filters
+    charts: [],          // {id, config, el}
+    page: 1, pageSize: 25,
+    mapMarkers: [],      // leaflet markers
+    geocodeCache: {},    // cache for geocode to avoid repeated calls
+  };
+
+  // ---- DOM Elements ----
+  const fileInput = document.getElementById('fileInput');
+  const fileDrop = document.getElementById('fileDrop');
+  const uploadFeedback = document.getElementById('uploadFeedback');
+  const schemaList = document.getElementById('schemaList');
+  const filtersContainer = document.getElementById('filtersContainer');
+  const dashboard = document.getElementById('dashboard');
+  const chartType = document.getElementById('chartType');
+  const xField = document.getElementById('xField');
+  const yField = document.getElementById('yField');
+  const agg = document.getElementById('agg');
+  const topN = document.getElementById('topN');
+  const addChartBtn = document.getElementById('addChart');
+  const clearDataBtn = document.getElementById('clearData');
+  const clearDashboardBtn = document.getElementById('clearDashboard');
+  const exportAllCSV = document.getElementById('exportAllCSV');
+  const globalSearch = document.getElementById('globalSearch');
+  const resetFiltersBtn = document.getElementById('resetFilters');
+  const clearFiltersBtn = document.getElementById('clearFilters');
+  const openMapBtn = document.getElementById('openMap');
+  const geocodeAllBtn = document.getElementById('geocodeAll');
+  const toggleClustering = document.getElementById('toggleClustering');
+  const toggleTooltips = document.getElementById('toggleTooltips');
+  const exportTableCSV = document.getElementById('exportTableCSV');
+  const exportTableXLSX = document.getElementById('exportTableXLSX');
+  const tableHead = document.getElementById('tableHead');
+  const tableBody = document.getElementById('tableBody');
+  const tableInfo = document.getElementById('tableInfo');
+  const prevPage = document.getElementById('prevPage');
+  const nextPage = document.getElementById('nextPage');
+  const printBtn = document.getElementById('printBtn');
+  const themeToggle = document.getElementById('themeToggle');
+  const mapModal = new bootstrap.Modal(document.getElementById('mapModal'), {});
+  const mapEl = document.getElementById('map');
+  const fitMarkersBtn = document.getElementById('fitMarkers');
+  const toggleFullMapBtn = document.getElementById('toggleFullMap');
+
+  // Map objects
+  let map, markersLayer;
+
+  // Theme init
+  const savedTheme = localStorage.getItem('was-theme') || 'light';
+  document.documentElement.setAttribute('data-theme', savedTheme);
+  updateThemeIcon();
+
+  // ---------- Utilities ----------
+  const uid = (p='id') => `${p}_${Math.random().toString(36).slice(2,9)}`;
+
+  // detect value type: number, date, boolean, string
+  function detectType(values) {
+    const v = values.filter(x => x !== null && x !== undefined && x !== '');
+    if(!v.length) return 'string';
+    const numeric = v.every(x => !isNaN(Number(x)));
+    if(numeric) return 'number';
+    const dateLike = v.every(x => {
+      // try Date parse if not purely numbers
+      const d = new Date(x);
+      return !isNaN(d.valueOf());
+    });
+    if(dateLike) return 'date';
+    const boolLike = v.every(x => ['true','false','0','1'].includes(String(x).toLowerCase()));
+    if(boolLike) return 'boolean';
+    return 'string';
+  }
+
+  // apply filters + global search to rawData
+  function applyFilters() {
+    let data = state.rawData.slice();
+    // column specific filters
+    for(const [col, f] of Object.entries(state.filters)) {
+      if(!f) continue;
+      if(f.type === 'checkbox') {
+        const allowed = new Set(f.values.filter(v => f.selectedSet.has(v)));
+        data = data.filter(r => allowed.has(r[col]));
+      } else if(f.type === 'range') {
+        data = data.filter(r => {
+          const val = Number(r[col]);
+          return (isNaN(val) ? false : val >= f.min && val <= f.max);
+        });
+      } else if(f.type === 'dateRange') {
+        data = data.filter(r => {
+          const d = new Date(r[col]);
+          return (!isNaN(d) && d >= f.from && d <= f.to);
+        });
+      }
+    }
+
+    // global search
+    const q = globalSearch.value.trim().toLowerCase();
+    if(q) {
+      data = data.filter(row => {
+        return state.columns.some(c => {
+          const v = row[c.name];
+          if(v === null || v === undefined) return false;
+          return String(v).toLowerCase().includes(q);
+        });
+      });
+    }
+
+    state.filteredData = data;
+    state.page = 1;
+    renderTable();
+    // update charts if desired — each chart when rendering uses filteredData
+    state.charts.forEach(c => renderChartById(c.id));
+  }
+
+  // parse file (csv/xlsx)
+  async function parseFile(file) {
+    uploadFeedback.textContent = 'Parsing...';
+    try {
+      const data = await file.arrayBuffer();
+      const name = file.name.toLowerCase();
+      let workbook;
+      if(name.endsWith('.csv')) {
+        const text = new TextDecoder().decode(data);
+        const csv = text;
+        const wb = XLSX.read(csv, {type:'string'});
+        workbook = wb;
+      } else {
+        workbook = XLSX.read(data, {type:'array'});
+      }
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      const json = XLSX.utils.sheet_to_json(worksheet, {defval: ''});
+      state.rawData = json;
+      detectSchemaAndBuild(json);
+      uploadFeedback.innerHTML = `<strong class="text-success">Loaded:</strong> ${file.name} — ${json.length} rows`;
+      applyFilters();
+    } catch(err) {
+      console.error(err);
+      uploadFeedback.innerHTML = `<span class="text-danger">Failed to parse file — ${err.message}</span>`;
+    }
+  }
+
+  function detectSchemaAndBuild(data) {
+    const sample = data.slice(0, Math.min(200, data.length));
+    const cols = Object.keys(sample[0] || {});
+    state.columns = cols.map(name => {
+      const values = sample.map(r => r[name]);
+      return { name, type: detectType(values) };
+    });
+
+    // build filters UI
+    buildSchemaUI();
+    buildFiltersUI();
+    populateFieldSelectors();
+  }
+
+  function buildSchemaUI() {
+    schemaList.innerHTML = '';
+    const rows = state.columns.map(c => {
+      return `<div class="d-flex justify-content-between align-items-center py-1">
+        <div><strong>${escapeHtml(c.name)}</strong><div class="small-muted">${c.type}</div></div>
+        <div class="small-muted">${c.type === 'number' ? '🔢' : c.type === 'date' ? '📅' : '🔤'}</div>
+      </div>`;
+    });
+    schemaList.innerHTML = rows.join('');
+  }
+
+  // Build filter controls based on detected column types
+  function buildFiltersUI() {
+    filtersContainer.innerHTML = '';
+    state.filters = {};
+    state.columns.forEach(c => {
+      const name = c.name;
+      if(c.type === 'string' || c.type === 'boolean') {
+        // checkbox list with select all
+        const values = Array.from(new Set(state.rawData.map(r => r[name] === '' ? '(empty)' : String(r[name])))).slice(0,1000);
+        const id = uid('filter');
+        const container = document.createElement('div');
+        container.className = 'mb-2';
+        container.innerHTML = `<div class="d-flex justify-content-between align-items-center">
+            <label class="form-label mb-0 small-muted">${escapeHtml(name)}</label>
+            <small class="small-muted">${values.length} values</small>
+          </div>
+          <div class="mt-1" id="${id}"></div>`;
+        filtersContainer.appendChild(container);
+
+        const valuesContainer = container.querySelector(`#${id}`);
+        // Select All checkbox
+        const selectAll = document.createElement('div');
+        selectAll.className = 'form-check';
+        selectAll.innerHTML = `<input class="form-check-input" type="checkbox" id="${id}_all" checked>
+                               <label class="form-check-label small-muted" for="${id}_all">Select All</label>`;
+        valuesContainer.appendChild(selectAll);
+
+        const ul = document.createElement('div'); ul.style.maxHeight = '140px'; ul.style.overflow = 'auto';
+        values.forEach(v => {
+          const key = `${id}_${hashString(v)}`;
+          const ch = document.createElement('div');
+          ch.className = 'form-check';
+          ch.innerHTML = `<input class="form-check-input filter-checkbox" type="checkbox" id="${key}" data-col="${name}" checked>
+                          <label class="form-check-label small-muted" for="${key}">${escapeHtml(v)}</label>`;
+          ul.appendChild(ch);
+        });
+        valuesContainer.appendChild(ul);
+
+        // store filter metadata
+        const selectedSet = new Set(values);
+        state.filters[name] = { type:'checkbox', values, selectedSet };
+
+        // events
+        valuesContainer.querySelector(`#${id}_all`).addEventListener('change', (ev) => {
+          const checked = ev.target.checked;
+          valuesContainer.querySelectorAll('.filter-checkbox').forEach(cb => cb.checked = checked);
+          state.filters[name].selectedSet = new Set(checked ? values : []);
+          applyFilters();
+        });
+        valuesContainer.querySelectorAll('.filter-checkbox').forEach(cb => {
+          cb.addEventListener('change', (ev) => {
+            const checked = ev.target.checked;
+            const val = ev.target.nextSibling ? ev.target.nextSibling.textContent : '';
+            if(checked) state.filters[name].selectedSet.add(val);
+            else state.filters[name].selectedSet.delete(val);
+            applyFilters();
+          });
+        });
+
+      } else if(c.type === 'number') {
+        // range slider (min/max)
+        const nums = state.rawData.map(r => Number(r[name])).filter(n => !isNaN(n));
+        const min = Math.min(...nums);
+        const max = Math.max(...nums);
+        const id = uid('range');
+        const container = document.createElement('div');
+        container.className = 'mb-2';
+        container.innerHTML = `<label class="form-label mb-0 small-muted">${escapeHtml(name)}</label>
+          <div class="d-flex align-items-center gap-2 mt-1">
+            <input id="${id}_from" type="number" class="form-control form-control-sm" value="${min}" style="width:110px">
+            <span class="small-muted">to</span>
+            <input id="${id}_to" type="number" class="form-control form-control-sm" value="${max}" style="width:110px">
+          </div>`;
+        filtersContainer.appendChild(container);
+        state.filters[name] = { type:'range', min, max, from:min, to:max };
+        container.querySelector(`#${id}_from`).addEventListener('input', (e)=> {
+          const v = Number(e.target.value); state.filters[name].min = v; applyFilters();
+        });
+        container.querySelector(`#${id}_to`).addEventListener('input', (e)=> {
+          const v = Number(e.target.value); state.filters[name].max = v; applyFilters();
+        });
+
+      } else if(c.type === 'date') {
+        const id = uid('date');
+        const container = document.createElement('div');
+        container.className = 'mb-2';
+        // find min/max date
+        const dates = state.rawData.map(r => new Date(r[name])).filter(d => !isNaN(d));
+        const min = new Date(Math.min(...dates.map(d => d.valueOf())));
+        const max = new Date(Math.max(...dates.map(d => d.valueOf())));
+        container.innerHTML = `<label class="form-label mb-0 small-muted">${escapeHtml(name)}</label>
+          <div class="d-flex gap-2 mt-1">
+            <input id="${id}_from" type="date" class="form-control form-control-sm" value="${formatDateISO(min)}">
+            <input id="${id}_to" type="date" class="form-control form-control-sm" value="${formatDateISO(max)}">
+          </div>`;
+        filtersContainer.appendChild(container);
+        state.filters[name] = { type:'dateRange', from:min, to:max };
+        container.querySelector(`#${id}_from`).addEventListener('change', (e)=> {
+          state.filters[name].from = new Date(e.target.value); applyFilters();
+        });
+        container.querySelector(`#${id}_to`).addEventListener('change', (e)=> {
+          state.filters[name].to = new Date(e.target.value); applyFilters();
+        });
+      } else {
+        // fallback to string checkbox
+        state.filters[name] = { type:'checkbox', values:[], selectedSet:new Set() };
+      }
+    });
+  }
+
+  // populate X/Y selectors
+  function populateFieldSelectors() {
+    [xField,yField].forEach(sel => sel.innerHTML = '');
+    state.columns.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.name; opt.textContent = c.name;
+      xField.appendChild(opt.cloneNode(true));
+      yField.appendChild(opt.cloneNode(true));
+    });
+  }
+
+  // create chart config from UI and add to dashboard
+  function addChartFromUI() {
+    if(!state.rawData.length) return alert('Load a dataset first.');
+    const config = {
+      id: uid('chart'),
+      type: chartType.value,
+      x: xField.value,
+      y: yField.value,
+      agg: agg.value,
+      topN: Number(topN.value) || 0,
+      options: { tooltips: toggleTooltips.checked }
+    };
+    state.charts.push({ id: config.id, config });
+    renderChartCard(config);
+  }
+
+  // render a chart card
+  function renderChartCard(config) {
+    const card = document.createElement('div');
+    card.className = 'card p-2 chart-card';
+    card.dataset.chartId = config.id;
+    card.innerHTML = `<div class="d-flex align-items-center mb-2">
+        <strong class="me-auto small-muted">${escapeHtml(config.type)} — ${escapeHtml(config.x)} / ${escapeHtml(config.y)}</strong>
+        <div class="btn-group">
+          <button class="btn btn-sm btn-outline-secondary exportChart" title="Export PNG"><i class="fa-solid fa-image"></i></button>
+          <button class="btn btn-sm btn-outline-secondary exportData" title="Export filtered data"><i class="fa-solid fa-file-export"></i></button>
+          <button class="btn btn-sm btn-outline-danger removeChart" title="Remove chart"><i class="fa-solid fa-trash"></i></button>
+        </div>
+      </div>
+      <div id="plot_${config.id}" class="chart-canvas"></div>`;
+    dashboard.prepend(card);
+    // save element
+    const chartObj = state.charts.find(c => c.id === config.id);
+    if(chartObj) chartObj.el = card;
+    bindChartCardEvents(card, config);
+    renderChartById(config.id);
+  }
+
+  function bindChartCardEvents(card, config) {
+    card.querySelector('.removeChart').addEventListener('click', () => {
+      // remove from state
+      state.charts = state.charts.filter(c => c.id !== config.id);
+      card.remove();
+    });
+    card.querySelector('.exportChart').addEventListener('click', async () => {
+      const plotDiv = document.getElementById('plot_' + config.id);
+      try {
+        const dataUrl = await Plotly.toImage(plotDiv, {format:'png', height:600, width:900});
+        const blob = dataURLtoBlob(dataUrl);
+        saveAs(blob, `chart_${config.id}.png`);
+      } catch (err) {
+        alert('Failed to export chart: ' + err.message);
+      }
+    });
+    card.querySelector('.exportData').addEventListener('click', () => {
+      // export filtered dataset used by this chart
+      const fd = getChartData(config);
+      downloadCSV(fd, `chart_data_${config.id}.csv`);
+    });
+  }
+
+  // Get aggregation result for chart (returns array of {key, value, extra})
+  function getChartData(config) {
+    const data = state.filteredData.slice();
+    const x = config.x, y = config.y;
+    // grouping
+    const groups = {};
+    data.forEach(row => {
+      const key = row[x] === undefined || row[x] === '' ? '(empty)' : String(row[x]);
+      if(!groups[key]) groups[key] = { key, values: [] };
+      groups[key].values.push(row);
+    });
+    let arr = Object.values(groups).map(g => {
+      let val;
+      if(config.agg === 'count') val = g.values.length;
+      else {
+        const nums = g.values.map(r=>Number(r[y])).filter(n=>!isNaN(n));
+        if(config.agg === 'sum') val = nums.reduce((a,b)=>a+b,0);
+        else if(config.agg === 'avg') val = nums.length ? nums.reduce((a,b)=>a+b,0)/nums.length : 0;
+      }
+      return { key: g.key, value: val, rows: g.values };
+    });
+    // Top N
+    if(config.topN && config.topN > 0) {
+      arr.sort((a,b)=>b.value - a.value);
+      arr = arr.slice(0,config.topN);
+    }
+    return arr;
+  }
+
+  // Render chart by id
+  function renderChartById(id) {
+    const chartObj = state.charts.find(c => c.id === id);
+    if(!chartObj) return;
+    const config = chartObj.config;
+    const plotId = 'plot_' + config.id;
+    const el = document.getElementById(plotId);
+    if(!el) return;
+
+    const chartData = getChartData(config);
+    // build Plotly traces depending on type
+    const xvals = chartData.map(d => d.key);
+    const yvals = chartData.map(d => d.value);
+    const commonLayout = {
+      margin: { t:30, r:10, l:40, b:60 },
+      hovermode: 'closest',
+      legend: { orientation: 'h', y:-0.2 },
+      paper_bgcolor: 'transparent',
+      plot_bgcolor: 'transparent',
+    };
+
+    let data = [], layout = {...commonLayout, title: `${config.type} — ${config.x} / ${config.y}`};
+
+    switch(config.type) {
+      case 'bar':
+        data = [{ x:xvals, y:yvals, type:'bar', marker:{color:'#4e73df'} }];
+        break;
+      case 'hbar':
+        data = [{ x:yvals, y:xvals, type:'bar', orientation:'h', marker:{color:'#1cc88a'} }];
+        break;
+      case 'stacked_bar':
+        // create stacked by splitting by another categorical (y field used as series) - fallback single
+        data = [{ x:xvals, y:yvals, type:'bar', marker:{color:'#f6c23e'} }];
+        layout.barmode = 'stack';
+        break;
+      case 'line':
+        data = [{ x:xvals, y:yvals, type:'scatter', mode:'lines+markers', marker:{color:'#36b9cc'} }];
+        break;
+      case 'area':
+        data = [{ x:xvals, y:yvals, type:'scatter', fill:'tozeroy', mode:'lines', marker:{color:'#858796'} }];
+        break;
+      case 'pie':
+        data = [{ labels:xvals, values:yvals, type:'pie' }];
+        layout.legend = { orientation:'v', x:1.02, y:0.5 };
+        break;
+      case 'doughnut':
+        data = [{ labels:xvals, values:yvals, hole:0.4, type:'pie' }];
+        layout.legend = { orientation:'v', x:1.02, y:0.5 };
+        break;
+      case 'scatter':
+        // scatter: need numeric X and Y - use index if x not numeric
+        const sx = xvals.map((v,i)=> isNaN(Number(v)) ? i : Number(v));
+        data = [{ x:sx, y:yvals, mode:'markers', type:'scatter', marker:{size:8, color:'#6f42c1'} }];
+        break;
+      case 'bubble':
+        // bubble: use value magnitude for size
+        const sizes = yvals.map(v => Math.max(8, Math.min(60, Math.abs(v))));
+        data = [{ x:xvals, y:yvals, mode:'markers', marker:{size:sizes, color:'#e74a3b', opacity:0.7} }];
+        break;
+      case 'radar':
+        // radar: Plotly polar chart
+        data = [{ type:'scatterpolar', r:yvals, theta:xvals, fill:'toself' }];
+        layout.polar = { radialaxis: { visible:true } };
+        break;
+      case 'polar':
+        data = [{ type:'barpolar', r:yvals, theta:xvals, marker:{color:'#ff7f50'} }];
+        break;
+      default:
+        data = [{ x:xvals, y:yvals, type:'bar' }];
+    }
+
+    const configPlotly = {responsive:true, displaylogo:false, modeBarButtonsToRemove:['sendDataToCloud']};
+    Plotly.react(el, data, layout, configPlotly);
+    // click-to-highlight: attach event
+    el.on('plotly_click', function(evt){
+      if(!evt.points || !evt.points.length) return;
+      const p = evt.points[0];
+      const key = p.x || p.label;
+      highlightRowsByKey(config.x, key);
+    });
+  }
+
+  // Highlight rows in table where column x matches key
+  function highlightRowsByKey(col, key) {
+    tableBody.querySelectorAll('tr').forEach(tr => {
+      if(tr.dataset && tr.dataset.match === String(key)) tr.classList.add('table-warning');
+      else tr.classList.remove('table-warning');
+    });
+  }
+
+  // render the table (paginated) from filteredData
+  function renderTable() {
+    const data = state.filteredData;
+    const total = data.length;
+    const page = state.page;
+    const per = state.pageSize;
+    const start = (page-1)*per;
+    const pageData = data.slice(start, start+per);
+
+    // head
+    tableHead.innerHTML = '';
+    state.columns.forEach(c => {
+      const th = document.createElement('th');
+      th.scope = 'col';
+      th.tabIndex = 0;
+      th.textContent = c.name;
+      th.style.cursor = 'pointer';
+      th.addEventListener('click', () => {
+        sortByColumn(c.name);
+      });
+      tableHead.appendChild(th);
+    });
+
+    // body
+    tableBody.innerHTML = '';
+    pageData.forEach(row => {
+      const tr = document.createElement('tr');
+      tr.dataset.match = '';
+      state.columns.forEach(c => {
+        const td = document.createElement('td');
+        let v = row[c.name];
+        if(v === undefined || v === null || v === '') v = '';
+        // pretty date
+        if(c.type === 'date' && v) {
+          const d = new Date(v);
+          v = isNaN(d) ? v : d.toLocaleString();
+        }
+        td.textContent = v;
+        tr.appendChild(td);
+      });
+      tableBody.appendChild(tr);
+    });
+
+    tableInfo.textContent = `Showing ${Math.min(total, start+1)}–${Math.min(total, start+per)} of ${total} rows`;
+  }
+
+  function sortByColumn(col) {
+    // toggle sort
+    const sample = state.rawData[0] && state.rawData[0][col];
+    const isNum = !isNaN(Number(sample));
+    state.filteredData.sort((a,b) => {
+      if(isNum) return Number(a[col]) - Number(b[col]);
+      else return String(a[col]).localeCompare(String(b[col]));
+    });
+    state.page = 1;
+    renderTable();
+  }
+
+  // download CSV from array of objs
+  function downloadCSV(arr, filename='data.csv') {
+    if(!Array.isArray(arr)) arr = [];
+    if(!arr.length) {
+      alert('No data to export.');
+      return;
+    }
+    const cols = Object.keys(arr[0]);
+    const lines = [cols.join(',')];
+    arr.forEach(r => {
+      const row = cols.map(c => JSON.stringify(r[c] ?? ''));
+      lines.push(row.join(','));
+    });
+    const blob = new Blob([lines.join('\n')], {type:'text/csv;charset=utf-8;'});
+    saveAs(blob, filename);
+  }
+
+  // export filtered dataset whole
+  function exportFilteredData() {
+    downloadCSV(state.filteredData.map(r => r), 'filtered_data.csv');
+  }
+
+  // Helpers
+  function escapeHtml(s) {
+    if(s === undefined || s === null) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function hashString(s) {
+    let h = 0; if(!s) return 0;
+    for(let i=0;i<s.length;i++){ h = ((h<<5)-h)+s.charCodeAt(i); h |= 0; }
+    return Math.abs(h);
+  }
+  function formatDateISO(d){ if(!(d instanceof Date)) return ''; return d.toISOString().slice(0,10); }
+  function dataURLtoBlob(dataurl) {
+    const arr = dataurl.split(','), mime = arr[0].match(/:(.*?);/)[1];
+    const bstr = atob(arr[1]); let n = bstr.length; const u8arr = new Uint8Array(n);
+    while(n--) u8arr[n] = bstr.charCodeAt(n);
+    return new Blob([u8arr], {type:mime});
+  }
+
+  // Export table as xlsx using SheetJS
+  function exportTableXLSXFunc() {
+    if(!state.filteredData.length) { alert('No data to export'); return; }
+    const ws = XLSX.utils.json_to_sheet(state.filteredData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+    const wbout = XLSX.write(wb, {bookType:'xlsx', type:'array'});
+    saveAs(new Blob([wbout], {type:'application/octet-stream'}), 'filtered_data.xlsx');
+  }
+
+  // ---------- Map Implementation ----------
+  function initMap() {
+    if(map) return;
+    map = L.map('map', { minZoom:2 }).setView([20,0],2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+    markersLayer = L.markerClusterGroup();
+    map.addLayer(markersLayer);
+  }
+
+  function openMapPanel() {
+    if(!state.rawData.length) { alert('Load a dataset first'); return; }
+    initMap();
+    markersLayer.clearLayers();
+    state.mapMarkers = [];
+    // try to find lat/long columns
+    const latCol = state.columns.find(c => /lat/i.test(c.name));
+    const lonCol = state.columns.find(c => /lon|lng|long/i.test(c.name));
+    const cityCol = state.columns.find(c => /city/i.test(c.name));
+    const stateCol = state.columns.find(c => /state|province/i.test(c.name));
+    let count=0;
+    state.filteredData.forEach(row => {
+      let lat, lon;
+      if(latCol && lonCol) {
+        lat = Number(row[latCol.name]);
+        lon = Number(row[lonCol.name]);
+      }
+      if(!isFinite(lat) || !isFinite(lon)) {
+        // attempt geocode if city/state present and cached
+        if(cityCol) {
+          const addr = [row[cityCol.name], stateCol ? row[stateCol.name] : '', row.country || ''].filter(Boolean).join(', ');
+          const key = addr.toLowerCase();
+          if(state.geocodeCache[key]) {
+            lat = state.geocodeCache[key].lat;
+            lon = state.geocodeCache[key].lon;
+          }
+        }
+      }
+      if(isFinite(lat) && isFinite(lon)) {
+        const marker = L.marker([lat, lon]);
+        const info = buildPopupHTML(row);
+        marker.bindPopup(info);
+        markersLayer.addLayer(marker);
+        state.mapMarkers.push(marker);
+        count++;
+      }
+    });
+    mapModal.show();
+    setTimeout(()=> fitMarkers(), 300);
+    return count;
+  }
+
+  function buildPopupHTML(row) {
+    const lines = Object.keys(row).slice(0,10).map(k => `<strong>${escapeHtml(k)}:</strong> ${escapeHtml(row[k])}`);
+    return `<div style="max-width:260px">${lines.join('<br>')}</div>`;
+  }
+
+  function fitMarkers() {
+    if(!map) return;
+    const group = markersLayer;
+    if(group.getLayers().length === 0) {
+      map.setView([20,0],2);
+      return;
+    }
+    map.fitBounds(group.getBounds().pad(0.2));
+  }
+
+  // geocode Nominatim (client-side, rate-limited)
+  async function geocodeAll() {
+    if(!state.rawData.length) return alert('Load dataset first.');
+    // find city/state columns
+    const cityCol = state.columns.find(c => /city/i.test(c.name));
+    if(!cityCol) return alert('No city column detected to geocode.');
+    const stateCol = state.columns.find(c => /state|province/i.test(c.name));
+    const rows = state.filteredData;
+    let queued = [];
+    rows.forEach(r => {
+      const addr = [r[cityCol.name], stateCol ? r[stateCol.name] : '', r.country || ''].filter(Boolean).join(', ');
+      const key = addr.toLowerCase();
+      if(!state.geocodeCache[key]) queued.push({key, addr});
+    });
+    if(!queued.length) return alert('All addresses already geocoded (cached).');
+
+    if(!confirm(`Geocode ${queued.length} unique addresses using Nominatim? This may take time and is rate-limited.`)) return;
+    uploadFeedback.textContent = `Geocoding ${queued.length} addresses...`;
+    for(let i=0;i<queued.length;i++) {
+      const q = queued[i];
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q.addr)}&limit=1`, {headers:{'Accept-Language':'en'}});
+        const json = await res.json();
+        if(json && json[0]) {
+          state.geocodeCache[q.key] = { lat:Number(json[0].lat), lon:Number(json[0].lon) };
+        } else {
+          state.geocodeCache[q.key] = null;
+        }
+      } catch(err) {
+        console.error('geocode error', err);
+      }
+      // rate-limit 1 request per second
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    uploadFeedback.textContent = `Geocoding complete. ${queued.length} addresses processed. Open Map to see results.`;
+  }
+
+  // ---------- Events ----------
+  // File drag/drop
+  fileDrop.addEventListener('click', () => fileInput.click());
+  fileDrop.addEventListener('keydown', (e) => { if(e.key === 'Enter') fileInput.click();});
+  fileDrop.addEventListener('dragover', (e)=> { e.preventDefault(); fileDrop.classList.add('border-primary'); });
+  fileDrop.addEventListener('dragleave', (e)=> { fileDrop.classList.remove('border-primary'); });
+  fileDrop.addEventListener('drop', (e)=> {
+    e.preventDefault();
+    fileDrop.classList.remove('border-primary');
+    const f = e.dataTransfer.files[0];
+    if(f) parseFile(f);
+  });
+  fileInput.addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    if(f) parseFile(f);
+  });
+
+  addChartBtn.addEventListener('click', () => addChartFromUI());
+  clearDashboardBtn.addEventListener('click', () => {
+    if(!confirm('Clear all charts?')) return;
+    state.charts = []; dashboard.innerHTML = '<div class="small-muted">No charts yet. Add charts from controls above.</div>';
+  });
+  clearDataBtn.addEventListener('click', () => {
+    if(!confirm('Clear dataset and charts?')) return;
+    state.rawData = []; state.columns = []; state.filteredData = []; state.charts = []; dashboard.innerHTML = '<div class="small-muted">No charts yet. Add charts from controls above.</div>';
+    schemaList.innerHTML = ''; filtersContainer.innerHTML = '<p class="small-muted">No dataset loaded.</p>'; uploadFeedback.innerHTML = 'No dataset loaded.'; tableHead.innerHTML = ''; tableBody.innerHTML = '';
+  });
+
+  globalSearch.addEventListener('input', () => applyFilters());
+  resetFiltersBtn.addEventListener('click', () => {
+    // reset filter state to defaults
+    Object.keys(state.filters).forEach(k=> {
+      const f = state.filters[k];
+      if(f.type === 'checkbox') {
+        f.selectedSet = new Set(f.values);
+        // update UI if present
+        filtersContainer.querySelectorAll(`[data-col="${k}"]`).forEach(el => el.checked = true);
+      } else if(f.type === 'range') {
+        f.min = f.from = f.min; f.max = f.to = f.max;
+      } else if(f.type === 'dateRange') {
+        // skip
+      }
+    });
+    applyFilters();
+  });
+
+  clearFiltersBtn.addEventListener('click', () => {
+    state.filters = {};
+    filtersContainer.innerHTML = '<p class="small-muted">Filters cleared. Rebuild by reloading dataset.</p>';
+    applyFilters();
+  });
+
+  exportAllCSV.addEventListener('click', () => exportFilteredData());
+  exportTableCSV.addEventListener('click', () => { downloadCSV(state.filteredData, 'table_filtered.csv'); });
+  exportTableXLSX.addEventListener('click', () => exportTableXLSXFunc());
+  prevPage.addEventListener('click', () => { state.page = Math.max(1, state.page-1); renderTable(); });
+  nextPage.addEventListener('click', () => { state.page = state.page + 1; renderTable(); });
+  printBtn.addEventListener('click', () => { window.print(); });
+
+  openMapBtn.addEventListener('click', () => { const count = openMapPanel(); /* optional feedback */ });
+  geocodeAllBtn.addEventListener('click', () => { geocodeAll(); });
+
+  fitMarkersBtn.addEventListener('click', () => fitMarkers());
+  toggleFullMapBtn.addEventListener('click', () => {
+    // request fullscreen for map modal
+    const modalEl = document.querySelector('#mapModal .modal-dialog');
+    if(!document.fullscreenElement) modalEl.requestFullscreen?.();
+    else document.exitFullscreen?.();
+  });
+
+  // theme toggle
+  themeToggle.addEventListener('click', () => {
+    const cur = document.documentElement.getAttribute('data-theme') || 'light';
+    const next = cur === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('was-theme', next);
+    updateThemeIcon();
+  });
+  function updateThemeIcon(){
+    const t = document.documentElement.getAttribute('data-theme') || 'light';
+    themeToggle.innerHTML = t === 'light' ? '<i class="fa-solid fa-moon"></i>' : '<i class="fa-solid fa-sun"></i>';
+  }
+
+  // Accessibility: keyboard snapshot for adding chart via Enter when selectors focused
+  [chartType, xField, yField, agg, topN].forEach(el => el.addEventListener('keydown', (e) => { if(e.key === 'Enter') addChartFromUI(); }));
+
+  // ---------- Small helpers for CSV export of chart data ----------
+  function getChartDataForDownload(config) {
+    // returns array of objects rows with key,value
+    const arr = getChartData(config).map(d => ({ [config.x]: d.key, [config.agg + '('+config.y+')']: d.value }));
+    return arr;
+  }
+
+  // escape for CSV already handled in downloadCSV
+
+  // ---------- Initialize with sample dataset if none ----------
+  // optional: include tiny sample so UI is demo-ready
+  const sampleData = [
+    {Vendor:'Acme',City:'San Francisco',State:'CA',Country:'USA',Latitude:37.7749,Longitude:-122.4194,Sales:1200,Date:'2024-01-15'},
+    {Vendor:'BetaCorp',City:'New York',State:'NY',Country:'USA',Latitude:40.7128,Longitude:-74.0060,Sales:2100,Date:'2024-02-10'},
+    {Vendor:'Gamma',City:'Bengaluru',State:'Karnataka',Country:'India',Latitude:12.9716,Longitude:77.5946,Sales:900,Date:'2024-03-05'},
+    {Vendor:'Delta',City:'London',State:'',Country:'UK',Latitude:51.5072,Longitude:-0.1276,Sales:1700,Date:'2024-03-25'},
+    {Vendor:'Epsilon',City:'Sydney',State:'NSW',Country:'Australia',Latitude:-33.8688,Longitude:151.2093,Sales:600,Date:'2024-04-10'},
+  ];
+
+  // Preload sample to showcase features
+  (function preloadSample(){
+    state.rawData = sampleData.slice();
+    detectSchemaAndBuild(state.rawData);
+    uploadFeedback.innerHTML = `<strong class="text-info">Sample dataset loaded</strong> — ${state.rawData.length} rows`;
+    applyFilters();
+  })();
+
+  // Utility: small CSV download for arrays of objects (already used)
+  // dataURLtoBlob done above
+
+  // ---------- Small security / safety ----------
+  function sanitizeHTML(s) { return escapeHtml(s); }
+
+  // ---------- End ----------
+})();
+  </script>
 </body>
 </html>
